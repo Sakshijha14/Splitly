@@ -1,0 +1,95 @@
+// Database tables. After editing this file, run `npm run db:push` to update the database.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String // never store the real password, only a bcrypt hash of it
+  createdAt    DateTime      @default(now())
+  memberships  GroupMember[]
+  groupsMade   Group[]
+  expensesPaid Expense[]      @relation("PaidBy")
+  expensesMade Expense[]      @relation("CreatedBy")
+  shares       ExpenseShare[]
+  paymentsSent Settlement[]   @relation("PaidFrom")
+  paymentsGot  Settlement[]   @relation("PaidTo")
+  paymentsMade Settlement[]   @relation("RecordedBy")
+}
+
+model Group {
+  id          String        @id @default(cuid())
+  name        String
+  createdById String
+  createdBy   User          @relation(fields: [createdById], references: [id])
+  createdAt   DateTime      @default(now())
+  members     GroupMember[]
+  expenses    Expense[]
+  settlements Settlement[]
+}
+
+// Joins users and groups: one row per "this user is in this group".
+model GroupMember {
+  groupId  String
+  userId   String
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@id([groupId, userId]) // the same person can't be added to a group twice
+  @@index([userId])
+}
+
+// Money is stored in paise (₹1 = 100 paise) as whole numbers, because decimals like
+// 0.1 + 0.2 don't add up exactly in floating point.
+model Expense {
+  id          String         @id @default(cuid())
+  groupId     String
+  group       Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  description String
+  amount      Int // total, in paise
+  paidById    String
+  paidBy      User           @relation("PaidBy", fields: [paidById], references: [id])
+  createdById String
+  createdBy   User           @relation("CreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime       @default(now())
+  shares      ExpenseShare[]
+
+  @@index([groupId])
+}
+
+// How much of an expense each person owes. The shares of one expense always add up to its amount.
+model ExpenseShare {
+  expenseId String
+  userId    String
+  expense   Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id])
+  amount    Int // in paise
+
+  @@id([expenseId, userId])
+}
+
+// A payment between two members to pay back what they owe, e.g. "J paid Sakshi ₹600".
+model Settlement {
+  id          String   @id @default(cuid())
+  groupId     String
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromId      String
+  from        User     @relation("PaidFrom", fields: [fromId], references: [id])
+  toId        String
+  to          User     @relation("PaidTo", fields: [toId], references: [id])
+  amount      Int // in paise
+  createdById String
+  createdBy   User     @relation("RecordedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([groupId])
+}
