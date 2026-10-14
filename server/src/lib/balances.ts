@@ -11,6 +11,25 @@ export function splitEqually(total: number, userIds: string[]): { userId: string
   return userIds.map((userId, i) => ({ userId, amount: base + (i < leftover ? 1 : 0) }));
 }
 
+/**
+ * Splits a total by percentages given in hundredths of a percent (12.5% -> 1250; all add up to 10000).
+ * Each person first gets their share rounded down. The paise left over go one each to the people
+ * whose shares were rounded down the most, so the shares always add up to exactly the total.
+ */
+export function splitByPercent(total: number, parts: { userId: string; basisPoints: number }[]): { userId: string; amount: number }[] {
+  const shares = parts.map((p, i) => {
+    const exact = (total * p.basisPoints) / 10000;
+    return { i, userId: p.userId, amount: Math.floor(exact), remainder: exact - Math.floor(exact) };
+  });
+  let leftover = total - shares.reduce((sum, s) => sum + s.amount, 0);
+  for (const s of [...shares].sort((a, b) => b.remainder - a.remainder || a.i - b.i)) {
+    if (leftover === 0) break;
+    s.amount++;
+    leftover--;
+  }
+  return shares.map(({ userId, amount }) => ({ userId, amount }));
+}
+
 interface ExpenseForBalance {
   amount: number;
   paidById: string;

@@ -59,6 +59,8 @@ export function ActivityList({ groupId, expenses, settlements, nameOf, onDeleted
   );
 }
 
+const splitLabel = { equal: 'split equally', exact: 'split by amounts', percent: 'split by %' };
+
 function ExpenseRow({ e, myId, nameOf }: { e: Expense; myId?: string; nameOf(id: string): string }) {
   const myShare = e.shares.find((s) => s.userId === myId)?.amount;
   const payer = e.paidById === myId ? 'You' : nameOf(e.paidById);
@@ -66,7 +68,7 @@ function ExpenseRow({ e, myId, nameOf }: { e: Expense; myId?: string; nameOf(id:
     <div>
       <p className="font-medium">{e.description}</p>
       <p className="text-sm text-slate-500">
-        {payer} paid {formatMoney(e.amount)} · split {e.shares.length} {e.shares.length === 1 ? 'way' : 'ways'}
+        {payer} paid {formatMoney(e.amount)} · {splitLabel[e.splitType]} between {e.shares.length}
         {myShare !== undefined && ` · your share ${formatMoney(myShare)}`}
       </p>
       <p className="text-xs text-slate-400">{shortDate(e.createdAt)}</p>

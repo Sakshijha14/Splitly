@@ -16,6 +16,11 @@ export interface AuthResponse {
   user: User;
 }
 
+// A group member. invited = added by a friend but hasn't signed up yet.
+export interface Member extends User {
+  invited: boolean;
+}
+
 export interface GroupSummary {
   id: string;
   name: string;
@@ -28,7 +33,7 @@ export interface GroupDetail {
   name: string;
   createdById: string;
   createdAt: string;
-  members: User[];
+  members: Member[];
 }
 
 // All money from the server is in paise (₹1 = 100 paise).
@@ -36,6 +41,7 @@ export interface Expense {
   id: string;
   description: string;
   amount: number;
+  splitType: 'equal' | 'exact' | 'percent';
   paidById: string;
   createdAt: string;
   shares: { userId: string; amount: number }[];
