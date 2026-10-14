@@ -2,7 +2,7 @@
 
 Split shared expenses with friends and settle up in as few payments as possible.
 
-**Live demo:** _add your Render link here_
+**Live demo:** https://splitly-ko79.onrender.com (free hosting: the first load after a quiet period can take ~30–50 seconds)
 
 ## Features
 
