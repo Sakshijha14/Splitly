@@ -1,0 +1,17 @@
+# Render "Blueprint": tells Render how to build and run Splitly as one web service.
+# The server serves both the API (/api/...) and the built React website.
+services:
+  - type: web
+    name: splitly
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build && npm run db:push -- --skip-generate
+    startCommand: npm start -w server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DATABASE_URL
+        sync: false # you paste your Neon link in Render's dashboard
+      - key: JWT_SECRET
+        generateValue: true # Render makes a random secret
