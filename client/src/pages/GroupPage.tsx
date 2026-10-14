@@ -6,7 +6,7 @@ import { ActivityList } from '../components/group/ActivityList';
 import { AddExpenseForm } from '../components/group/AddExpenseForm';
 import { BalancesCard } from '../components/group/BalancesCard';
 import { useAuth } from '../context/AuthContext';
-import { request, type ExpensesResponse, type GroupDetail, type User } from '../lib/api';
+import { request, type ExpensesResponse, type GroupDetail, type Member } from '../lib/api';
 
 export function GroupPage() {
   const { id = '' } = useParams();
@@ -15,6 +15,7 @@ export function GroupPage() {
   const [money, setMoney] = useState<ExpensesResponse | null>(null);
   const [loadError, setLoadError] = useState('');
   const [email, setEmail] = useState('');
+  const [friendName, setFriendName] = useState('');
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
 
@@ -37,9 +38,13 @@ export function GroupPage() {
     setError('');
     setAdding(true);
     try {
-      const { member } = await request<{ member: User }>(`/api/groups/${id}/members`, 'POST', { email });
+      const { member } = await request<{ member: Member }>(`/api/groups/${id}/members`, 'POST', {
+        email,
+        name: friendName || undefined,
+      });
       setGroup((g) => g && { ...g, members: [...g.members, member] });
       setEmail('');
+      setFriendName('');
       loadMoney(); // the new member appears in the balances
     } catch (err) {
       setError((err as Error).message);
@@ -92,6 +97,7 @@ export function GroupPage() {
                 <span>
                   {m.name}
                   {m.id === user?.id && <span className="text-slate-500"> (you)</span>}
+                  {m.invited && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">invited</span>}
                 </span>
                 <span className="text-sm text-slate-500">{m.email}</span>
               </li>
@@ -99,15 +105,18 @@ export function GroupPage() {
           </ul>
 
           <form onSubmit={handleAdd}>
-            <label className="mb-1 block text-sm font-medium">Add a friend by email</label>
+            <label className="mb-1 block text-sm font-medium">Add a friend</label>
             <div className="flex gap-2">
               <input className="input" type="email" placeholder="friend@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <input className="input" placeholder="Name (optional)" value={friendName} onChange={(e) => setFriendName(e.target.value)} maxLength={50} />
               <button className="btn shrink-0" disabled={adding}>
                 {adding ? 'Adding…' : 'Add'}
               </button>
             </div>
             {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-            <p className="mt-2 text-xs text-slate-500">Your friend needs a Splitly account first.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              No account yet? No problem. They'll show as invited, and when they sign up with this email they'll see the group and its expenses.
+            </p>
           </form>
         </section>
       </div>

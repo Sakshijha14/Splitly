@@ -28,13 +28,15 @@ authRoutes.post(
   asyncRoute(async (req, res) => {
     const { name, email, password } = signupBody.parse(req.body);
 
-    const taken = await db.user.findUnique({ where: { email } });
-    if (taken) throw new AppError(409, 'An account with this email already exists');
+    const existing = await db.user.findUnique({ where: { email } });
+    if (existing?.passwordHash) throw new AppError(409, 'An account with this email already exists');
 
-    const user = await db.user.create({
-      data: { name, email, passwordHash: await bcrypt.hash(password, 10) },
-      select: publicFields,
-    });
+    // If a friend already added this email to a group, claim that invited account (keeping its
+    // groups and expenses) instead of creating a new one.
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = existing
+      ? await db.user.update({ where: { id: existing.id }, data: { name, passwordHash }, select: publicFields })
+      : await db.user.create({ data: { name, email, passwordHash }, select: publicFields });
     res.status(201).json({ token: createToken(user.id), user });
   }),
 );
@@ -46,7 +48,8 @@ authRoutes.post(
 
     const user = await db.user.findUnique({ where: { email } });
     // Same message whether the email or the password is wrong, so attackers can't tell which emails exist.
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    // Invited people who haven't signed up yet have no password, so they can't log in.
+    if (!user?.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
       throw new AppError(401, 'Wrong email or password');
     }
     res.json({ token: createToken(user.id), user: { id: user.id, name: user.name, email: user.email } });

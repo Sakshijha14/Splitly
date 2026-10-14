@@ -16,9 +16,16 @@ const groupBody = z.object({
 
 const memberBody = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email'),
+  name: z.string().trim().max(50, 'Name is too long').optional(), // used if they don't have an account yet
 });
 
 const publicUser = { id: true, name: true, email: true } as const;
+// passwordHash is only read to tell whether someone has signed up. It is never sent to the browser.
+const memberFields = { ...publicUser, passwordHash: true } as const;
+
+function toMember(u: { id: string; name: string; email: string; passwordHash: string | null }) {
+  return { id: u.id, name: u.name, email: u.email, invited: u.passwordHash === null };
+}
 
 // Your groups, newest first, with how many people are in each.
 groupRoutes.get(
@@ -61,28 +68,30 @@ groupRoutes.get(
         name: true,
         createdById: true,
         createdAt: true,
-        members: { orderBy: { joinedAt: 'asc' }, select: { user: { select: publicUser } } },
+        members: { orderBy: { joinedAt: 'asc' }, select: { user: { select: memberFields } } },
       },
     });
-    res.json({ group: { ...group, members: group.members.map((m) => m.user) } });
+    res.json({ group: { ...group, members: group.members.map((m) => toMember(m.user)) } });
   }),
 );
 
-// Add a friend by email. They need a Splitly account first.
+// Add a friend by email. If they don't have an account yet, an invited account is made for them,
+// which they claim by signing up with that email.
 groupRoutes.post(
   '/:id/members',
   asyncRoute(async (req, res) => {
     const groupId = req.params.id;
     await checkMember(groupId, res.locals.userId);
-    const { email } = memberBody.parse(req.body);
+    const { email, name } = memberBody.parse(req.body);
 
-    const friend = await db.user.findUnique({ where: { email }, select: publicUser });
-    if (!friend) throw new AppError(404, 'No Splitly account uses that email. Ask your friend to sign up first.');
+    const friend =
+      (await db.user.findUnique({ where: { email }, select: memberFields })) ??
+      (await db.user.create({ data: { email, name: name || email.split('@')[0] }, select: memberFields }));
 
     const already = await db.groupMember.findUnique({ where: { groupId_userId: { groupId, userId: friend.id } } });
     if (already) throw new AppError(409, `${friend.name} is already in this group`);
 
     await db.groupMember.create({ data: { groupId, userId: friend.id } });
-    res.status(201).json({ member: friend });
+    res.status(201).json({ member: toMember(friend) });
   }),
 );
