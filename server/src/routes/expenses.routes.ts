@@ -1,5 +1,6 @@
 // GET /api/groups/:groupId/expenses        expenses, payments made, balances and suggested payments
 // POST /api/groups/:groupId/expenses       add an expense, split equally, by exact amounts or by percent
+// PUT /api/groups/:groupId/expenses/:id    change an expense (same body as POST)
 // DELETE /api/groups/:groupId/expenses/:id delete an expense
 import { Router } from 'express';
 import { z } from 'zod';
@@ -38,8 +39,14 @@ const expenseBody = z.object({
   split,
 });
 
+interface Share {
+  userId: string;
+  amount: number; // paise
+  percent?: number; // hundredths of a percent, only for percent splits
+}
+
 /** Works out each person's share in paise, checking that the shares match the total. */
-function sharesFor(amount: number, s: z.infer<typeof split>): { userId: string; amount: number }[] {
+function sharesFor(amount: number, s: z.infer<typeof split>): Share[] {
   if (s.type === 'equal') {
     if (amount < s.userIds.length) throw new AppError(400, 'Amount is too small to split between that many people');
     return splitEqually(amount, s.userIds);
@@ -55,7 +62,26 @@ function sharesFor(amount: number, s: z.infer<typeof split>): { userId: string; 
   if (sum !== 10000) throw new AppError(400, `The percentages add up to ${sum / 100}%, not 100%`);
   const shares = splitByPercent(amount, s.shares.map((x) => ({ userId: x.userId, basisPoints: x.percent })));
   if (shares.some((x) => x.amount === 0)) throw new AppError(400, 'Amount is too small for those percentages');
-  return shares;
+  return shares.map((x, i) => ({ ...x, percent: s.shares[i].percent }));
+}
+
+/** Checks a new or edited expense from the browser and works out its shares. Used by POST and PUT. */
+async function readExpense(groupId: string, input: unknown) {
+  const body = expenseBody.parse(input);
+  const shares = sharesFor(body.amount, body.split);
+
+  // Everyone in the split must be listed once, and they and the payer must be in this group.
+  const members = new Set(await memberIds(groupId));
+  const splitIds = shares.map((x) => x.userId);
+  if (new Set(splitIds).size !== splitIds.length) throw new AppError(400, 'Each person can only appear once in a split');
+  if (!members.has(body.paidById) || splitIds.some((id) => !members.has(id))) {
+    throw new AppError(400, 'Everyone in an expense must be a member of the group');
+  }
+
+  return {
+    fields: { description: body.description, amount: body.amount, splitType: body.split.type, paidById: body.paidById },
+    shares,
+  };
 }
 
 expenseRoutes.get(
@@ -76,7 +102,7 @@ expenseRoutes.get(
           splitType: true,
           paidById: true,
           createdAt: true,
-          shares: { select: { userId: true, amount: true } },
+          shares: { select: { userId: true, amount: true, percent: true } },
         },
       }),
       db.settlement.findMany({
@@ -101,32 +127,33 @@ expenseRoutes.post(
   asyncRoute(async (req, res) => {
     const { groupId } = req.params as { groupId: string };
     await checkMember(groupId, res.locals.userId);
-    const body = expenseBody.parse(req.body);
-
-    const { amount } = body;
-    const shares = sharesFor(amount, body.split);
-
-    // Everyone in the split must be listed once, and they and the payer must be in this group.
-    const members = new Set(await memberIds(groupId));
-    const splitIds = shares.map((x) => x.userId);
-    if (new Set(splitIds).size !== splitIds.length) throw new AppError(400, 'Each person can only appear once in a split');
-    if (!members.has(body.paidById) || splitIds.some((id) => !members.has(id))) {
-      throw new AppError(400, 'Everyone in an expense must be a member of the group');
-    }
+    const { fields, shares } = await readExpense(groupId, req.body);
 
     const expense = await db.expense.create({
-      data: {
-        groupId,
-        description: body.description,
-        amount,
-        splitType: body.split.type,
-        paidById: body.paidById,
-        createdById: res.locals.userId,
-        shares: { create: shares },
-      },
+      data: { ...fields, groupId, createdById: res.locals.userId, shares: { create: shares } },
       select: { id: true },
     });
     res.status(201).json({ expense });
+  }),
+);
+
+expenseRoutes.put(
+  '/:id',
+  asyncRoute(async (req, res) => {
+    const { groupId, id } = req.params as { groupId: string; id: string };
+    await checkMember(groupId, res.locals.userId);
+    const { fields, shares } = await readExpense(groupId, req.body);
+
+    const existing = await db.expense.findFirst({ where: { id, groupId }, select: { id: true } });
+    if (!existing) throw new AppError(404, 'Expense not found');
+
+    // Replace the old shares with the new ones. The transaction means both steps happen or neither
+    // does, so an expense is never left with missing shares.
+    await db.$transaction([
+      db.expenseShare.deleteMany({ where: { expenseId: id } }),
+      db.expense.update({ where: { id }, data: { ...fields, shares: { create: shares } } }),
+    ]);
+    res.json({ expense: { id } });
   }),
 );
 

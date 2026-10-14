@@ -1,8 +1,8 @@
-// Form to add an expense: what it was for, how much, who paid, and how it's split
+// Form to add an expense (or edit one): what it was for, how much, who paid, and how it's split
 // (equally, by exact amounts, or by percentages).
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { request, type Member } from '../../lib/api';
+import { request, type Expense, type Member } from '../../lib/api';
 
 type SplitType = 'equal' | 'exact' | 'percent';
 
@@ -17,16 +17,40 @@ function sumOf(values: string[]): number {
   return values.reduce((total, v) => total + Math.round((Number(v) || 0) * 100), 0) / 100;
 }
 
-export function AddExpenseForm({ groupId, members, onAdded }: { groupId: string; members: Member[]; onAdded(): void }) {
+/** Turns a saved expense's shares back into what would have been typed in the boxes. */
+function typedValues(e: Expense): Record<string, string> {
+  if (e.splitType === 'equal') return {};
+  return Object.fromEntries(
+    e.shares.map((s) => [
+      s.userId,
+      e.splitType === 'exact'
+        ? String(s.amount / 100)
+        : // Older percent expenses didn't store the percentage, so work it out from the amount.
+          String(s.percent !== null ? s.percent / 100 : Math.round((s.amount / e.amount) * 10000) / 100),
+    ]),
+  );
+}
+
+interface Props {
+  groupId: string;
+  members: Member[];
+  editing?: Expense; // when set, the form edits this expense instead of adding a new one
+  onSaved(): void;
+  onCancel?(): void;
+}
+
+export function AddExpenseForm({ groupId, members, editing, onSaved, onCancel }: Props) {
   const { user } = useAuth();
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidById, setPaidById] = useState(user?.id ?? '');
-  const [splitType, setSplitType] = useState<SplitType>('equal');
+  const [description, setDescription] = useState(editing?.description ?? '');
+  const [amount, setAmount] = useState(editing ? String(editing.amount / 100) : '');
+  const [paidById, setPaidById] = useState(editing?.paidById ?? user?.id ?? '');
+  const [splitType, setSplitType] = useState<SplitType>(editing?.splitType ?? 'equal');
   // Who is NOT in an equal split. Storing the exclusions means friends added later are included by default.
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [excluded, setExcluded] = useState<Set<string>>(() =>
+    editing?.splitType === 'equal' ? new Set(members.filter((m) => !editing.shares.some((s) => s.userId === m.id)).map((m) => m.id)) : new Set(),
+  );
   // What's typed next to each person for exact amounts or percentages. Blank = not in the split.
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(() => (editing ? typedValues(editing) : {}));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -63,12 +87,17 @@ export function AddExpenseForm({ groupId, members, onAdded }: { groupId: string;
     setError('');
     setSaving(true);
     try {
-      await request(`/api/groups/${groupId}/expenses`, 'POST', { description, amount: total, paidById, split: buildSplit() });
-      setDescription('');
-      setAmount('');
-      setExcluded(new Set());
-      setValues({});
-      onAdded();
+      const body = { description, amount: total, paidById, split: buildSplit() };
+      if (editing) {
+        await request(`/api/groups/${groupId}/expenses/${editing.id}`, 'PUT', body);
+      } else {
+        await request(`/api/groups/${groupId}/expenses`, 'POST', body);
+        setDescription('');
+        setAmount('');
+        setExcluded(new Set());
+        setValues({});
+      }
+      onSaved();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -80,8 +109,8 @@ export function AddExpenseForm({ groupId, members, onAdded }: { groupId: string;
   const canSubmit = splitType === 'equal' ? equalIds.length > 0 : filled.length > 0 && remaining === 0;
 
   return (
-    <form onSubmit={handleSubmit} className="card space-y-3">
-      <h2 className="font-semibold">Add an expense</h2>
+    <form onSubmit={handleSubmit} className={`card space-y-3 ${editing ? 'border-emerald-600 ring-1 ring-emerald-600' : ''}`}>
+      <h2 className="font-semibold">{editing ? 'Edit expense' : 'Add an expense'}</h2>
       <div className="flex gap-2">
         <input className="input" placeholder="What was it for? e.g. Dinner" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={100} required />
         <div className="relative w-36 shrink-0">
@@ -169,9 +198,16 @@ export function AddExpenseForm({ groupId, members, onAdded }: { groupId: string;
       </fieldset>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <button className="btn" disabled={saving || !canSubmit}>
-        {saving ? 'Adding…' : 'Add expense'}
-      </button>
+      <div className="flex items-center gap-3">
+        <button className="btn" disabled={saving || !canSubmit}>
+          {saving ? 'Saving…' : editing ? 'Save changes' : 'Add expense'}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-900">
+            Cancel
+          </button>
+        )}
+      </div>
     </form>
   );
 }

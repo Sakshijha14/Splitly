@@ -44,7 +44,8 @@ export interface Expense {
   splitType: 'equal' | 'exact' | 'percent';
   paidById: string;
   createdAt: string;
-  shares: { userId: string; amount: number }[];
+  // percent is only set for percent splits, in hundredths of a percent (12.5% -> 1250).
+  shares: { userId: string; amount: number; percent: number | null }[];
 }
 
 export interface Payment {

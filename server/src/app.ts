@@ -12,6 +12,10 @@ import { settlementRoutes } from './routes/settlements.routes.js';
 
 export const app = express();
 
+// On Render, requests arrive through a proxy. This makes req.ip the visitor's real IP address
+// (used by the login rate limit) instead of the proxy's.
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: env.clientUrl }));
 app.use(express.json());
 

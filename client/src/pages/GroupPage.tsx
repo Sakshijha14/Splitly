@@ -6,13 +6,14 @@ import { ActivityList } from '../components/group/ActivityList';
 import { AddExpenseForm } from '../components/group/AddExpenseForm';
 import { BalancesCard } from '../components/group/BalancesCard';
 import { useAuth } from '../context/AuthContext';
-import { request, type ExpensesResponse, type GroupDetail, type Member } from '../lib/api';
+import { request, type Expense, type ExpensesResponse, type GroupDetail, type Member } from '../lib/api';
 
 export function GroupPage() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const [money, setMoney] = useState<ExpensesResponse | null>(null);
+  const [editing, setEditing] = useState<Expense | null>(null);
   const [loadError, setLoadError] = useState('');
   const [email, setEmail] = useState('');
   const [friendName, setFriendName] = useState('');
@@ -86,8 +87,34 @@ export function GroupPage() {
 
       <div className="space-y-6">
         <BalancesCard groupId={group.id} data={money} nameOf={nameOf} onChanged={loadMoney} />
-        <AddExpenseForm groupId={group.id} members={group.members} onAdded={loadMoney} />
-        <ActivityList groupId={group.id} expenses={money.expenses} settlements={money.settlements} nameOf={nameOf} onDeleted={loadMoney} />
+        {/* key makes React build a fresh form whenever you switch which expense is being edited */}
+        <div id="expense-form" className="scroll-mt-6">
+          <AddExpenseForm
+            key={editing?.id ?? 'new'}
+            groupId={group.id}
+            members={group.members}
+            editing={editing ?? undefined}
+            onSaved={() => {
+              setEditing(null);
+              loadMoney();
+            }}
+            onCancel={editing ? () => setEditing(null) : undefined}
+          />
+        </div>
+        <ActivityList
+          groupId={group.id}
+          expenses={money.expenses}
+          settlements={money.settlements}
+          nameOf={nameOf}
+          onEdit={(expense) => {
+            setEditing(expense);
+            document.getElementById('expense-form')?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          onDeleted={() => {
+            setEditing(null);
+            loadMoney();
+          }}
+        />
 
         <section className="card">
           <h2 className="mb-3 font-semibold">Members ({group.members.length})</h2>

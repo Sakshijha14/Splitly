@@ -9,6 +9,7 @@ interface Props {
   expenses: Expense[];
   settlements: Settlement[];
   nameOf(id: string): string;
+  onEdit(expense: Expense): void;
   onDeleted(): void;
 }
 
@@ -18,7 +19,7 @@ function shortDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-export function ActivityList({ groupId, expenses, settlements, nameOf, onDeleted }: Props) {
+export function ActivityList({ groupId, expenses, settlements, nameOf, onEdit, onDeleted }: Props) {
   const { user } = useAuth();
   const [error, setError] = useState('');
 
@@ -49,9 +50,16 @@ export function ActivityList({ groupId, expenses, settlements, nameOf, onDeleted
         {items.map((item) => (
           <li key={item.data.id} className="flex items-start justify-between gap-4 py-3">
             {item.kind === 'expense' ? <ExpenseRow e={item.data} myId={user?.id} nameOf={nameOf} /> : <PaymentRow s={item.data} nameOf={nameOf} />}
-            <button onClick={() => handleDelete(item)} className="shrink-0 text-sm text-slate-400 hover:text-red-600">
-              Delete
-            </button>
+            <div className="flex shrink-0 gap-3 text-sm">
+              {item.kind === 'expense' && (
+                <button onClick={() => onEdit(item.data)} className="text-slate-400 hover:text-emerald-700">
+                  Edit
+                </button>
+              )}
+              <button onClick={() => handleDelete(item)} className="text-slate-400 hover:text-red-600">
+                Delete
+              </button>
+            </div>
           </li>
         ))}
       </ul>

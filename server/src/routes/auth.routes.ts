@@ -1,6 +1,7 @@
 // POST /api/auth/signup, POST /api/auth/login, GET /api/auth/me
 import bcrypt from 'bcryptjs';
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { db } from '../db.js';
 import { createToken, requireLogin } from '../middleware/auth.js';
@@ -20,11 +21,32 @@ const loginBody = z.object({
   password: z.string(),
 });
 
+// Slow down password guessing: 10 wrong logins per IP address per 15 minutes.
+// Successful logins don't count, so normal users never hit the limit.
+const loginLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many failed logins. Please wait 15 minutes and try again.' },
+});
+
+// Stop scripts from creating lots of accounts: 10 signups per IP address per hour.
+const signupLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many accounts created from this network. Please try again later.' },
+});
+
 // The user fields that are safe to send to the browser (never the password hash).
 const publicFields = { id: true, name: true, email: true } as const;
 
 authRoutes.post(
   '/signup',
+  signupLimit,
   asyncRoute(async (req, res) => {
     const { name, email, password } = signupBody.parse(req.body);
 
@@ -43,6 +65,7 @@ authRoutes.post(
 
 authRoutes.post(
   '/login',
+  loginLimit,
   asyncRoute(async (req, res) => {
     const { email, password } = loginBody.parse(req.body);
 

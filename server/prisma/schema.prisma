@@ -76,6 +76,7 @@ model ExpenseShare {
   expense   Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
   user      User    @relation(fields: [userId], references: [id])
   amount    Int // in paise
+  percent   Int? // only for percent splits, in hundredths of a percent (12.5% -> 1250), so editing shows what was typed
 
   @@id([expenseId, userId])
 }
